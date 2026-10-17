@@ -1,6 +1,17 @@
--- Compact Box ESP Hub
--- Wind UI | Roblox Studio
--- Features: Player Name, Distance, Box Highlight
+--[[
+    Compact ESP Hub
+    Wind UI
+    For your own Roblox Studio game
+
+    Features:
+    - Compact player names and distance
+    - Character outline ESP
+    - Team check
+    - Adjustable text size and distance
+    - Player selection
+    - Teleport near selected player
+    - Current server information
+]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -19,14 +30,16 @@ local TEAM_CHECK = false
 
 local ESP_OBJECTS = {}
 local Connections = {}
+local SelectedPlayer = nil
+local Unloaded = false
 
--- Load Wind UI
+-- Wind UI
 local WindUI = loadstring(game:HttpGet(
     "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
 ))()
 
 local Window = WindUI:CreateWindow({
-    Title = "Compact ESP",
+    Title = "Compact ESP Hub",
     Icon = "eye",
     Author = "Xen",
     Folder = "CompactESP",
@@ -35,44 +48,46 @@ local Window = WindUI:CreateWindow({
     Theme = "Dark",
 })
 
--- Remove ESP
-local function removeESP(player)
-    local data = ESP_OBJECTS[player]
-
-    if data then
-        if data.Highlight then
-            data.Highlight:Destroy()
-        end
-
-        if data.Billboard then
-            data.Billboard:Destroy()
-        end
-
-        ESP_OBJECTS[player] = nil
-    end
+-- Notification helper
+local function Notify(title, content)
+    WindUI:Notify({
+        Title = title,
+        Content = content,
+        Duration = 3,
+    })
 end
 
--- Create ESP
-local function createESP(player)
-    if player == LocalPlayer then
-        return
+-- Remove a player's ESP
+local function RemoveESP(player)
+    local data = ESP_OBJECTS[player]
+    if not data then return end
+
+    if data.Highlight then
+        data.Highlight:Destroy()
     end
 
-    removeESP(player)
+    if data.Billboard then
+        data.Billboard:Destroy()
+    end
+
+    ESP_OBJECTS[player] = nil
+end
+
+-- Create ESP for a character
+local function CreateESP(player)
+    if player == LocalPlayer or Unloaded then return end
+
+    RemoveESP(player)
 
     local character = player.Character
-    if not character then
-        return
-    end
+    if not character then return end
 
     local root = character:FindFirstChild("HumanoidRootPart")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
 
-    if not root or not humanoid then
-        return
-    end
+    if not root or not humanoid then return end
 
-    -- Box-style character highlight
+    -- Character outline
     local highlight = Instance.new("Highlight")
     highlight.Name = "CompactESPHighlight"
     highlight.Adornee = character
@@ -84,7 +99,7 @@ local function createESP(player)
     highlight.Enabled = BOX_ENABLED
     highlight.Parent = character
 
-    -- Small name and distance label
+    -- Compact label
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "CompactESPLabel"
     billboard.Adornee = root
@@ -112,12 +127,12 @@ local function createESP(player)
 end
 
 -- Refresh ESP
-local function refreshESP()
+local function RefreshESP()
     for _, player in ipairs(Players:GetPlayers()) do
-        removeESP(player)
+        RemoveESP(player)
 
         if ESP_ENABLED then
-            createESP(player)
+            CreateESP(player)
         end
     end
 end
@@ -133,7 +148,7 @@ ESPTab:Toggle({
     Default = false,
     Callback = function(value)
         ESP_ENABLED = value
-        refreshESP()
+        RefreshESP()
     end,
 })
 
@@ -170,10 +185,8 @@ ESPTab:Toggle({
 })
 
 ESPTab:Button({
-    Title = "Refresh Players",
-    Callback = function()
-        refreshESP()
-    end,
+    Title = "Refresh ESP",
+    Callback = RefreshESP,
 })
 
 -- Settings tab
@@ -210,15 +223,105 @@ SettingsTab:Slider({
     end,
 })
 
--- Update labels and visibility
+-- Teleport tab
+local TeleportTab = Window:Tab({
+    Title = "Teleport",
+    Icon = "map-pin",
+})
+
+local function GetPlayerNames()
+    local names = {}
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(names, player.Name)
+        end
+    end
+
+    table.sort(names)
+    return names
+end
+
+local PlayerDropdown = TeleportTab:Dropdown({
+    Title = "Select Player",
+    Values = GetPlayerNames(),
+    Callback = function(value)
+        SelectedPlayer = Players:FindFirstChild(value)
+    end,
+})
+
+TeleportTab:Button({
+    Title = "Refresh Player List",
+    Callback = function()
+        PlayerDropdown:Refresh(GetPlayerNames())
+        Notify("Players", "Player list refreshed.")
+    end,
+})
+
+TeleportTab:Button({
+    Title = "Teleport Near Player",
+    Callback = function()
+        if not SelectedPlayer
+            or not SelectedPlayer.Parent
+            or SelectedPlayer == LocalPlayer then
+
+            Notify("Teleport", "Select a valid player first.")
+            return
+        end
+
+        local character = LocalPlayer.Character
+        local targetCharacter = SelectedPlayer.Character
+
+        local myRoot = character
+            and character:FindFirstChild("HumanoidRootPart")
+
+        local targetRoot = targetCharacter
+            and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+        if not myRoot or not targetRoot then
+            Notify("Teleport", "A character is unavailable.")
+            return
+        end
+
+        -- For your own Roblox Studio game.
+        myRoot.CFrame = targetRoot.CFrame * CFrame.new(3, 0, 0)
+
+        Notify("Teleport", "Moved near " .. SelectedPlayer.Name)
+    end,
+})
+
+-- Server information
+TeleportTab:Section({
+    Title = "Current Server",
+})
+
+local ServerInfo = TeleportTab:Paragraph({
+    Title = "Server Information",
+    Content = "Job ID: " .. game.JobId
+        .. "\nPlayers: " .. #Players:GetPlayers()
+        .. "/" .. Players.MaxPlayers,
+})
+
+TeleportTab:Button({
+    Title = "Refresh Server Information",
+    Callback = function()
+        Notify(
+            "Server Information",
+            "Players: " .. #Players:GetPlayers()
+                .. "/" .. Players.MaxPlayers
+        )
+    end,
+})
+
+-- Update ESP
 Connections.Update = RunService.RenderStepped:Connect(function()
+    if Unloaded then return end
+
     local myCharacter = LocalPlayer.Character
     local myRoot = myCharacter
         and myCharacter:FindFirstChild("HumanoidRootPart")
 
-    if not myRoot then
-        return
-    end
+    if not myRoot then return end
 
     for player, data in pairs(ESP_OBJECTS) do
         local character = player.Character
@@ -227,53 +330,58 @@ Connections.Update = RunService.RenderStepped:Connect(function()
         local humanoid = character
             and character:FindFirstChildOfClass("Humanoid")
 
-        if root and humanoid then
-            local distance = (root.Position - myRoot.Position).Magnitude
-
-            local sameTeam = TEAM_CHECK
-                and LocalPlayer.Team ~= nil
-                and player.Team == LocalPlayer.Team
-
-            local visible = ESP_ENABLED
-                and distance <= MAX_DISTANCE
-                and humanoid.Health > 0
-                and not sameTeam
-
-            data.Billboard.Enabled =
-                visible and NAME_DISTANCE_ENABLED
-
-            data.Highlight.Enabled =
-                visible and BOX_ENABLED
-
-            data.Label.Text = string.format(
-                "%s [%.0fm]",
-                player.DisplayName,
-                distance
-            )
-        else
+        if not root or not humanoid then
             data.Billboard.Enabled = false
             data.Highlight.Enabled = false
+            continue
         end
+
+        local distance = (root.Position - myRoot.Position).Magnitude
+
+        local sameTeam = TEAM_CHECK
+            and LocalPlayer.Team ~= nil
+            and player.Team == LocalPlayer.Team
+
+        local visible = ESP_ENABLED
+            and distance <= MAX_DISTANCE
+            and humanoid.Health > 0
+            and not sameTeam
+
+        data.Billboard.Enabled =
+            visible and NAME_DISTANCE_ENABLED
+
+        data.Highlight.Enabled =
+            visible and BOX_ENABLED
+
+        data.Label.Text = string.format(
+            "%s [%.0fm]",
+            player.DisplayName,
+            distance
+        )
     end
 end)
 
--- Handle new players
+-- New players and respawns
 Connections.PlayerAdded = Players.PlayerAdded:Connect(function(player)
     Connections[player] = player.CharacterAdded:Connect(function()
         task.wait(0.5)
 
-        if ESP_ENABLED then
-            createESP(player)
+        if ESP_ENABLED and not Unloaded then
+            CreateESP(player)
         end
     end)
 
     if player.Character and ESP_ENABLED then
-        createESP(player)
+        CreateESP(player)
     end
 end)
 
 Connections.PlayerRemoving = Players.PlayerRemoving:Connect(function(player)
-    removeESP(player)
+    RemoveESP(player)
+
+    if SelectedPlayer == player then
+        SelectedPlayer = nil
+    end
 
     if Connections[player] then
         Connections[player]:Disconnect()
@@ -285,6 +393,9 @@ end)
 SettingsTab:Button({
     Title = "Unload Hub",
     Callback = function()
+        Unloaded = true
+        ESP_ENABLED = false
+
         for _, connection in pairs(Connections) do
             if typeof(connection) == "RBXScriptConnection" then
                 connection:Disconnect()
@@ -292,11 +403,11 @@ SettingsTab:Button({
         end
 
         for player in pairs(ESP_OBJECTS) do
-            removeESP(player)
+            RemoveESP(player)
         end
 
         Window:Destroy()
     end,
 })
 
-print("Compact ESP Hub loaded successfully!")
+print("Compact ESP Hub loaded!")
